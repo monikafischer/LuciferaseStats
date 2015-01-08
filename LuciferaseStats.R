@@ -1,4 +1,4 @@
-#command-shift-o collapses everything!
+#command-option-o collapses everything!
 # t.tests and anovas on samples within a dataframe using rbind #####
 LucPrelimDat <- read.table(file.choose(), header=TRUE)
 
@@ -56,9 +56,9 @@ nrc1bem1 <- rbind(nrc1.3, bem1.4)
 t.test(value~variable, data=nrc1bem1)
 t.test(value~variable, data=datm[which(datm$variable %in% c("nrc1.3", "bem1.4")), ])
 
-#Alex's two cents of awesome:
-#Datatables!
+#Alex's two cents of awesome: Datatables! ####
 #with data.table you can avoid creating a million objects with things like rbind
+library("data.table", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
 datm.dt<-data.table(datm)
 t.test(value~variable, data=datm.dt[variable %in% c("nrc1.3", "bem1.4"), ])
 datm.dt
@@ -66,12 +66,42 @@ datm.dt[ ,sd(value)/sqrt(.N), by=variable][order(V1, decreasing=TRUE), ]
 datm.dt[ ,.N, by=variable]
 datm.mean.se<-datm.dt[ ,list(mean(value), 
                              mean(value)+sd(value/sqrt(.N)), 
-                             mean(value)-sd(value/sqrt(.N))), by=variable]
+                             mean(value)-sd(value/sqrt(.N))), by=variable,]
 
+#datatable basics ####
+library("data.table", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
+dat <- read.table(file.choose(), header=TRUE) #read in summary luciferase file
+datnovars <- dat[ ,-1] #remove first column, which is "vars"
+head(datnovars)
+dat.dt <- data.table(datnovars)
+dat.dt #automatically shows you the first 5 rows and the last 5 rows! cool!
+dat.dt[5] #outputs row #5  ...dat.dt[5,] also works. Commas are optional.
+dat.dt[strain=="WT9"] #outputs all rows with "WT9" in the strain column!
+dat.dt[date=="6.Feb.14"] #outputs all rows with "6.Feb.14" in the date column
+setkey(dat.dt, strain) #sorts entire table based on the strain column!
+dat.dt["WT9"] #after setting the key, there's no need to use "strain==" to pull rows from the key column
+setkey(dat.dt, strain, date) #re-set the key to sort by two columns instead of one.
+dat.dt[list("WT9", "6.Feb.14")] #outputs row with "WT9" in the strain column and "the date"6.Feb.14" in the date column
+
+
+datc <- dcast(melt(datnovars), variable~strain, id.vars=c("date", "strain"))
+
+#
+# plotting with ggplot2 ####
 theme_opts <- list(theme(panel.background = element_rect(fill="white"),
                           panel.grid.minor = element_blank(),
                           panel.grid.major = element_blank(),
                           axis.title.x = element_blank()))
+                          #plot.background = element_blank(),
+                          #panel.border = element_blank(),
+                          #panel.margin = unit(1, "lines"),
+                          #axis.line = element_line(size=0.2, linetype=1)))
+                          #axis.text.x = element_blank(),
+                          #axis.text.y = element_blank(),
+                          #axis.ticks = element_blank(),
+                          #axis.title.x = element_blank(),
+                          #axis.title.y = element_blank(),
+                          #plot.title = element_text(size=22)))
                   
 ggplot(datm.mean.se)+
   geom_bar(aes(variable, V1), fill="orange", color="red", stat="identity")+
@@ -83,7 +113,9 @@ library(plotrix)
 gap.barplot(datm.mean.se$V1, gap=c(400,2700))
 #broken y-axis ...this can't be done in ggplot2
 
+#Reshape data directly from the luminometer: ####
 #each row is a strain, each collumn is a rep #######
+library("reshape2", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
 dat <- read.table(file.choose(), header=TRUE)
 head(dat)
 #rotate table so that each collumn is a strain and each row is a rep:
@@ -94,8 +126,9 @@ dat2 <- datcast[-1,]
 head(dat2)
 #dcast also renamed the first collumn to "variable", which gets confusing later with melt,
 #so I changed the name of the first collumn back to "vars":
-colnames(dat2)[1] <- "vars"
-datm <- melt(dat2, id.vars="vars")
+colnames(dat2)[1] <- "reps"
+datm <- melt(dat2, id.vars="reps")
+#reps is now a column that functions as the vars
 head(datm)
 anova <- aov(value~variable, data=datm)
 summary(anova)
