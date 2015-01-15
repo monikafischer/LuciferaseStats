@@ -92,7 +92,7 @@ theme_opts <- list(theme(panel.background = element_rect(fill="white"),
                           #plot.background = element_blank(),
                           #panel.border = element_blank(),
                           #panel.margin = unit(1, "lines"),
-                          #axis.line = element_line(size=0.2, linetype=1)))
+                          #axis.line = element_line(size=0.2, linetype=1, color="black")))
                           #axis.text.x = element_blank(),
                           #axis.text.y = element_blank(),
                           #axis.ticks = element_blank(),
@@ -100,7 +100,8 @@ theme_opts <- list(theme(panel.background = element_rect(fill="white"),
                           #axis.title.y = element_blank(),
                           #plot.title = element_text(size=22)))
                           #xlab(expression(paste(" ", Delta, "gene"))) #add Greek Delta to title!
-                  
+
+#basic barplot of sample means with error bars
 library("ggplot2", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
 ggplot(datm.mean.se)+
   geom_bar(aes(variable, V1), fill="orange", color="red", stat="identity")+
@@ -108,9 +109,6 @@ ggplot(datm.mean.se)+
   theme_opts+
   ylab("Pprm-1::Luciferase Output (photons/sec)")
 
-library(plotrix)
-gap.barplot(datm.mean.se$V1, gap=c(400,2700))
-#broken y-axis ...this can't be done in ggplot2
 
 #Reshape data directly from the luminometer: ####
 #each row is a strain, each collumn is a rep #######
@@ -164,20 +162,6 @@ datmoWTonly <- datmo[-c(1:66), ]
 datmoWTonly
 t.test(value~variable, data=datmoWTonly)
 
-#plotting normalized data ####
-rm(dat)
-dat <- read.table(file.choose(), header=TRUE)
-head(dat)
-plot(normavg~group, data=dat, ylab="Normalized Averages", xlab=".")
-
-library("ggplot2", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
-datnovars <- dat[ ,-1] #remove first column, which is "vars"
-head(datnovars)
-dat.dt <- data.table(dat)
-setkey(dat.dt, group)
-ggplot(dat.dt)+
-  geom_point(aes(organize,normavg))
-  
 #### alex had to play with this -------
 alex.dat<-dat.dt
 #create ordered factor
@@ -211,37 +195,6 @@ ggplot(alex.melt)+
   geom_point(aes(gene, value, color=group_f))+
   scale_x_discrete(limits=alex.melt[order(group_f), unique(gene)])+
   theme(axis.text.x = element_text(angle=90))
-##
-normdat <- read.table(file.choose(), header=TRUE)
-head(normdat)
-normdat.dt <- data.table(normdat)
-setkey(normdat.dt, date)
-normdat.dt.noaug21 <- normdat.dt[!"21.Aug.14"]
-normdat.dt.noaug21may18 <- normdat.dt.noaug21[!"18.May.14"] 
-#remove all rows containing 21.Aug.14 because this experiment lacked mak2 as a control.
-#normdat.dt[ ,rep12:=NULL] #remove column 12 because it's all NA's ...removed in Excel
-normdat.dt.noaug21may18[ ,group_f:=factor(group, levels=c('low', 'med', 'high'))]
-plot(normavg~group_f, data=normdat.dt.noaug21may18, 
-     ylab="Normalized Average Luciferase Output", xlab="Group")
-normdat.dt.m <-melt(normdat.dt.noaug21may18, id.vars=c("date", "strain", "gene", "isolate", "group", "group_f"), na.rm=TRUE)
-normdat.dt.m
-ggplot(normdat.dt.m)+
-  geom_point(aes(gene, value, color=group_f))+
-  scale_x_discrete(limits=normdat.dt.m[order(group_f), unique(gene)])+
-  #scale_x_discrete(limits=normdat.dt.m[order(gene), unique(gene)])+ #alphabetical by gene
-  theme(axis.text.x = element_text(angle=90, color="black"))+
-  theme(legend.title=element_blank())+
-  theme(panel.background = element_rect(fill="white"))+
-  theme(panel.grid.minor = element_blank())+
-  theme(panel.grid.major = element_line(color="grey90"))+  #grey100 = white, grey0 = black
-  theme(axis.ticks = element_line(color="grey90"))+
-  theme(axis.text.y = element_text(color="black"))+
-  ylab("Normalized Luceriferase Output")+
-  xlab(expression("Gene"))
-  #scale_x_discrete(limits=normdat.dt.m[order(c("mak2", "nrc1", "ham5", "bem1", "pp1", "ada3", "adv1", 
-                            "so", "ham4", "ham8", "ham9", "ham7", "ham6", "nox1", 
-                            "ham11", "ham14", "mob3", "spr7", "ptp2", "vib1", 
-                            "nik2", "cse1", "lao1", "arg15", "ham12", "WT")), unique(gene)]) 
 
 
 #import raw data?
@@ -252,9 +205,91 @@ dat.raw<-readLines("/Users/monikafischer/Dropbox/GlassLab/Luciferase/Raw_Data_Fi
 dat.raw[grep("</TABLE>", dat.raw)]
 #never mind, kinda complicated, check if can export in different format...
 
-#by the way, I can use the path instead of file.choose() to import data,
+## plotting normalized luciferase data ####
+normdat <- read.table(file.choose(), header=TRUE)
+head(normdat)
+normdat.dt <- data.table(normdat)
+setkey(normdat.dt, date)
+normdat.dt.noaug21 <- normdat.dt[!"21.Aug.14"]
+normdat.dt.noaug21may18 <- normdat.dt.noaug21[!"18.May.14"] 
+#remove all rows containing 21.Aug.14 and 18.May.14 because these experiments lacked mak2 as a control.
+#normdat.dt[ ,rep12:=NULL] #remove column 12 because it's all NA's ...removed in Excel prior to importing
+normdat.dt.noaug21may18[ ,group_f:=factor(group, levels=c('low', 'med', 'high'))]
+#creates an ordered factor which will ultimately dictate the order inwhich the groups appear on a plot
+
+#boxplot of normalized averages:
+plot(normavg~group_f, data=normdat.dt.noaug21may18, 
+     ylab="Normalized Average Luciferase Output", xlab="Group")
+
+#barplot of nomalized averages with sd:
+library(plyr)
+sdmeannormavg <- ddply(normdat.dt.noaug21may18, "group_f", summarise, mnormavg = mean(normavg), sdnormavg = sd(normavg))
+ggplot(sdmeannormavg, aes(x=factor(group_f), y=mnormavg))+
+  geom_bar(stat = "identity", width = 0.3, fill="white", color="black")+  #"when the data contains y-values in a column, use stat="identity"
+  geom_errorbar(aes(ymax = mnormavg + sdnormavg, ymin=mnormavg - sdnormavg), width=0.1)+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(axis.ticks = element_line(color="black", size = 0.2))+
+  theme(axis.text.y = element_text(color="black", size = 10))+
+  theme(axis.text.x = element_text(color="black", size = 14))+
+  theme(axis.line = element_line(color="black", size = 0.2))+
+  theme(axis.title.y = element_text(size = 16))+
+  ylab("Normalized Luceriferase Output")+
+  xlab(NULL)
+
+#ordered factors in the order that I ultimately want them on the geom_point() plot below.
+normdat.dt.noaug21may18[ ,gene_f:=factor(gene, levels=c("mak2", "nrc1", "ham5", "bem1", "pp1", "ada3", "adv1", 
+                                                        "so", "ham4", "ham8", "ham9", "ham7", "ham6", "nox1", 
+                                                        "ham11", "ham14", "mob3", "spr7", "ptp2", "vib1", 
+                                                        "nik2", "cse1", "lao1", "arg15", "ham12", "WT"))]
+#Discrete scatterplot of total normalized Luciferase data with aug21 and may18 experiments:
+normdat.dt.m <-melt(normdat.dt.noaug21may18, 
+                    id.vars=c("date", "strain", "gene", "isolate", "group", "group_f", "gene_f"), 
+                    na.rm=TRUE)
+ggplot(normdat.dt.m)+
+  geom_point(aes(gene, value, color=group_f))+
+  scale_x_discrete(limits=normdat.dt.m[order(gene_f), unique(gene)])+
+  #scale_x_discrete(limits=normdat.dt.m[order(gene), unique(gene)])+ #alphabetical by gene
+  theme(axis.text.x = element_text(angle=90, color="black"))+
+  theme(legend.title=element_blank())+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_line(color="grey90"))+  #grey100 = white, grey0 = black
+  theme(axis.ticks = element_line(color="grey90"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.key = element_rect(fill = "white", color = "white"))+
+  theme(legend.background = element_rect(colour = "grey70",size=0.25))+
+  ylab("Normalized Luceriferase Output")+
+  xlab(expression("Gene"))
+
+#Discrete scatterplot of total normalized data, without any experiments removed.
+normdat.dt[ ,group_f:=factor(group, levels=c('low', 'med', 'high'))]
+normdat.dt[ ,gene_f:=factor(gene, levels=c("mak2", "nrc1", "ham5", "bem1", "pp1", "ada3", "adv1", 
+                                           "so", "ham9", "ham8", "ham4", "ham7", "ham6", "nox1", 
+                                           "ham11", "ham14", "mob3", "ras2", "pp2A", "mik1", 
+                                           "amph1", "spr7", "ptp2", "vib1", "nik2", "cse1", 
+                                           "lao1", "arg15", "doc12", "ham12", "WT"))]
+normdat.dt.m <-melt(normdat.dt, 
+                    id.vars=c("date", "strain", "gene", "isolate", "group", "group_f", "gene_f"), 
+                    na.rm=TRUE)
+ggplot(normdat.dt.m)+
+  geom_point(aes(gene, value, color=group_f))+
+  scale_x_discrete(limits=normdat.dt.m[order(gene_f), unique(gene)])+
+  #scale_x_discrete(limits=normdat.dt.m[order(gene), unique(gene)])+ #alphabetical by gene
+  theme(axis.text.x = element_text(angle=90, color="black"))+
+  theme(legend.title=element_blank())+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_line(color="grey90"))+  #grey100 = white, grey0 = black
+  theme(axis.ticks = element_line(color="grey90"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.key = element_rect(fill = "white", color = "white"))+
+  theme(legend.background = element_rect(colour = "grey70",size=0.25))+
+  ylab("Normalized Luceriferase Output")+
+  xlab(expression("Gene"))
+  
 
 
+#Sidenote: I can use the path instead of file.choose() to import data,
 
 # t.tests on a dataframe made by mannually entering in values with c() and rbind ##########
 #This code gives a different answer and I'm not sure why....
