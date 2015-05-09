@@ -8,6 +8,12 @@ WTvHAM11 <- rbind(WT, ham11)
 t.test(cps~strain, data=WTvHAM11)
 #p=1.606e-5
 
+nrc1.3 <- datm[datm$variable=="nrc1.3",]
+bem1.4 <- datm[datm$variable=="bem1.4",]
+nrc1bem1 <- rbind(nrc1.3, bem1.4)
+t.test(value~variable, data=nrc1bem1)
+t.test(value~variable, data=datm[which(datm$variable %in% c("nrc1.3", "bem1.4")), ])
+
 lucdat <- read.table(file.choose(), header=TRUE)
 
 h314_ham11 <- lucdat[lucdat$strain=="h314_ham11",]
@@ -35,40 +41,175 @@ anova <- aov(luc~strain, data=lumdat)
 summary(anova)
 TukeyHSD(anova)
 
-#Reshape data directly from the luminometer: ####
+#Reshape data, barplot, and ANOVA a single luciferase experiment ####
 #each collumn is a strain, each row is a rep ####
-library("reshape2", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
 dat <- read.table(file.choose(), header=TRUE)
 head(dat)
-datm <- melt(dat, id.vars="vars")
+datm <- melt(dat, id.vars="reps") #collumn 1 is called "rep" and was added in Excel. It's just the numbers 1-8.
 head(datm)
-#collumn 1 is called "vars" and was added in Excel. It's just the numbers 1-8.
-anova <- aov(value~variable, data=datm)
+
+#Convert to data.table to turn datm into a table with means and SD for each strain
+datm.dt <- data.table(datm)
+datm.mean.sd<-datm.dt[ ,list(mean(value), 
+                             mean(value)+sd(value/sqrt(.N)), 
+                             mean(value)-sd(value/sqrt(.N))), by=variable,]
+
+#Basic barplot of sample means with error bars
+ggplot(datm.mean.sd)+
+  geom_bar(aes(variable, V1), fill="orange", color="red", stat="identity")+
+  geom_errorbar(aes(x=variable, ymax=V2, ymin=V3), color="purple", width=0.3)+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())+
+  theme(axis.title.x = element_blank())+
+  theme(axis.text.x = element_text(angle=45, color="black"))+
+  ylab("Pprm-1::Luciferase Output (photons/sec)")
+
+#ANOVA & TukeyHSD
+anova <- aov(value~variable, data=dat.cap)
 summary(anova)
 tukey <- TukeyHSD(anova, "variable")
 result <- data.frame(tukey$variable)
 result["p.adj"]
 #prints only the important stuff from the Tukey test!
 
-nrc1.3 <- datm[datm$variable=="nrc1.3",]
-bem1.4 <- datm[datm$variable=="bem1.4",]
-nrc1bem1 <- rbind(nrc1.3, bem1.4)
-t.test(value~variable, data=nrc1bem1)
-t.test(value~variable, data=datm[which(datm$variable %in% c("nrc1.3", "bem1.4")), ])
 
-#Alex's two cents of awesome: Datatables! ####
-#with data.table you can avoid creating a million objects with things like rbind
-library("data.table", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
-datm.dt<-data.table(datm)
-t.test(value~variable, data=datm.dt[variable %in% c("nrc1.3", "bem1.4"), ])
-datm.dt
-datm.dt[ ,sd(value)/sqrt(.N), by=variable][order(V1, decreasing=TRUE), ]
-datm.dt[ ,.N, by=variable]
-datm.mean.se<-datm.dt[ ,list(mean(value), 
+#Reshape data, barplot, and ANOVA a single luciferase experiment ####
+#each row is a strain, each collumn is a rep #######
+library("reshape2", lib.loc="/Library/Frameworks/R.framework/Versions/3.1/Resources/library")
+dat <- read.table(file.choose(), header=TRUE)
+head(dat)
+datcast <- dcast(melt(dat), variable~treatment) #rotate table so collumns=strains and rows=reps
+head(datcast)
+#dat2 <- datcast[-1,] #after using dcast the first row is the vars, remove it
+#dcast also renamed the first collumn to "variable", which gets confusing later with melt,
+#so I changed the name of the first collumn back to "reps":
+colnames(datcast)[1] <- "reps"
+head(datcast)
+datm <- melt(datcast, id.vars="reps") #reps is now a column that functions as the vars
+head(datm)
+
+#Convert to data.table to turn datm into a table with means and SD for each strain
+datm.dt <- data.table(datm)
+datm.mean.sd<-datm.dt[ ,list(mean(value), 
                              mean(value)+sd(value/sqrt(.N)), 
                              mean(value)-sd(value/sqrt(.N))), by=variable,]
 
-#datatable basics ####
+#Basic barplot of sample means with error bars
+library("ggplot2", lib.loc="/Library/Frameworks/R.framework/Versions/3.1/Resources/library")
+ggplot(datm.mean.sd)+
+  geom_bar(aes(variable, V1), fill="orange", color="red", stat="identity")+
+  geom_errorbar(aes(x=variable, ymax=V2, ymin=V3), color="purple", width=0.3)+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())+
+  theme(axis.title.x = element_blank())+
+  theme(axis.text.x = element_text(angle=45, color="black"))+
+  ylab("Pprm-1::Luciferase Output (photons/sec)")
+
+#ANOVA and TukeyHSD
+anova <- aov(value~variable, data=datm)
+summary(anova)
+tukey <- TukeyHSD(anova)
+result <- data.frame(tukey$variable)
+result["p.adj"]
+#something about printing only the p values changes the way the
+#p-values are formated, for example 0.0000146 --> 1.457372e-05 ...but not always...
+plot(TukeyHSD(anova, "variable")) #plots TukeyHSD p-values...
+
+
+#Reshape and subset data, barplot, and ANOVA for experiments with alpha factor or capsaicin ####
+#Each column is a strain, each row is a rep ####
+dat <- read.table(file.choose(), header=TRUE)
+head(dat)
+datm <- melt(dat, id.vars="reps") #collumn 1 is called "rep" and was added in Excel. It's just the numbers 1-8.
+head(datm)
+
+#Export data to add "treatment" column in Excel for doing 2-way ANOVA:
+write.csv(datm, "capalphadat.csv")
+treatdat <- read.table(file.choose(), header=TRUE)
+treatdat.dt <- data.table(treatdat)
+treatdat.cap <- subset(treatdat.dt, variable %in% c("mak2", "ham11","WT"), select=c(variable, treatment, value))
+twowayanova <- lm(value~variable+treatment+variable*treatment, data=treatdat.cap)
+summary(twowayanova)
+interaction.plot(treatdat.cap$treatment, treatdat.cap$variable, treatdat.cap$value)
+interaction.plot(treatdat.cap$variable, treatdat.cap$treatment, treatdat.cap$value)
+
+#Convert to data.table to turn datm into a table with means and SD for each strain
+datm.dt <- data.table(datm)
+datm.mean.sd<-datm.dt[ ,list(mean(value), 
+                             mean(value)+sd(value/sqrt(.N)), 
+                             mean(value)-sd(value/sqrt(.N))), by=variable,]
+
+#Subset datatable for experiments with capsaicin:
+dat.cap <- subset(datm.dt, variable %in% c("mak2_MM","mak2_200uM_cap", "ham11_MM", "ham11_200uM_cap",
+                                           "WT_MM", "WT_200uM_cap", "WT_150uM_cap"))
+dat.capWT <- subset(datm.dt, variable %in% c("WT_MM", "WT_200uM_cap", "WT_150uM_cap"))
+dat.capHam11 <- subset(datm.dt, variable %in% c("ham11_MM", "ham11_200uM_cap"))
+dat.capMak2 <- subset(datm.dt, variable %in% c("mak2_MM","mak2_200uM_cap"))
+dat.capMM <- subset(datm.dt, variable %in% c("mak2_MM", "ham11_MM", "WT_MM"))
+
+t.test(value~variable, data=dat.capMak2)
+t.test(value~variable, data=dat.capHam11)
+
+anova <- aov(value~variable, data=dat.capWT)
+summary(anova)
+tukey <- TukeyHSD(anova, "variable")
+result <- data.frame(tukey$variable)
+result["p.adj"]
+#a two-way anova would be more appropriate here...
+
+
+#create a new datatbale that is just the mean and SD for each strain for plotting
+meancap <-dat.cap[ ,list(mean(value), 
+                         mean(value)+sd(value/sqrt(.N)), 
+                         mean(value)-sd(value/sqrt(.N))), by=variable,]
+ggplot(meancap)+
+  geom_bar(aes(variable, V1), fill="orange", color="orange", stat="identity")+
+  geom_errorbar(aes(x=variable, ymax=V2, ymin=V3), color="black", width=0.3)+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())+
+  theme(axis.title.x = element_blank())+
+  theme(axis.text.x = element_text(angle=0, color="black"))+
+  ylab("Pprm-1::Luciferase Output (photons/sec)")
+
+###
+#subset datatable for just alpha factor data
+dat.alpha <- subset(datm.dt, variable %in% c("mak2_MM","mak2_50uM_alpha", "ham11_MM", "ham11_50uM_alpha",
+                                             "WT_MM", "WT_50uM_alpha", "WT_5uM_alpha"))
+dat.alphaWT <- subset(datm.dt, variable %in% c("WT_MM", "WT_50uM_alpha", "WT_5uM_alpha"))
+dat.alphamak2 <- subset(datm.dt, variable %in% c("mak2_MM","mak2_50uM_alpha"))   
+dat.alphaham11 <- subset(datm.dt, variable %in% c("ham11_MM", "ham11_50uM_alpha"))
+
+t.test(value~variable, data=dat.alphaham11)
+t.test(value~variable, data=dat.alphamak2)                        
+                        
+anova <- aov(value~variable, data=dat.alphaWT)
+summary(anova)
+tukey <- TukeyHSD(anova, "variable")
+result <- data.frame(tukey$variable)
+result["p.adj"]
+#a two-way anova would be more appropriate here...
+#twowayanova <- lm(value~strain+drug, data=?)
+
+#create a new datatbale that is just the mean and SD for each strain for plotting
+meanalpha <-dat.alpha[ ,list(mean(value), 
+                         mean(value)+sd(value/sqrt(.N)), 
+                         mean(value)-sd(value/sqrt(.N))), by=variable,]
+ggplot(meanalpha)+
+  geom_bar(aes(variable, V1), fill="orange", color="orange", stat="identity")+
+  geom_errorbar(aes(x=variable, ymax=V2, ymin=V3), color="black", width=0.3)+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())+
+  theme(axis.title.x = element_blank())+
+  theme(axis.text.x = element_text(angle=0, color="black"))+
+  ylab("Pprm-1::Luciferase Output (photons/sec)")
+
+###
+
+# datatable basics ####
 library("data.table", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
 dat <- read.table(file.choose(), header=TRUE) #read in summary luciferase file
 datnovars <- dat[ ,-1] #remove first column, which is "vars"
@@ -83,7 +224,21 @@ dat.dt["WT9"] #after setting the key, there's no need to use "strain==" to pull 
 setkey(dat.dt, strain, date) #re-set the key to sort by two columns instead of one.
 dat.dt[list("WT9", "6.Feb.14")] #outputs row with "WT9" in the strain column and "the date"6.Feb.14" in the date column
 
-#
+#Alex's two cents of awesome:
+datm.dt<-data.table(datm)
+t.test(value~variable, data=datm.dt[variable %in% c("nrc1.3", "bem1.4"), ])
+datm.dt
+datm.dt[ ,sd(value)/sqrt(.N), by=variable][order(V1, decreasing=TRUE), ]
+datm.dt[ ,.N, by=variable]
+
+## more useful manipulations for a dataframe from the recruitment weekend scores:
+scores <- read.csv(file.choose(), header=TRUE, na.strings="")
+#Automatically fills in "NA" for all blank values!
+scores.nona<- na.omit(scores)
+#removes all rows that contain "NA"
+
+####
+
 # plotting with ggplot2 ####
 theme_opts <- list(theme(panel.background = element_rect(fill="white"),
                           panel.grid.minor = element_blank(),
@@ -108,59 +263,6 @@ ggplot(datm.mean.se)+
   geom_errorbar(aes(x=variable, ymax=V2, ymin=V3), color="purple", width=0.3)+
   theme_opts+
   ylab("Pprm-1::Luciferase Output (photons/sec)")
-
-
-#Reshape data directly from the luminometer: ####
-#each row is a strain, each collumn is a rep #######
-library("reshape2", lib.loc="/Library/Frameworks/R.framework/Versions/3.0/Resources/library")
-rm(dat)
-dat <- read.table(file.choose(), header=TRUE)
-head(dat)
-datcast <- dcast(melt(dat), variable~strain) #rotate table so collumns=strains and rows=reps
-head(datcast)
-dat2 <- datcast[-1,] #after using dcast the first row is the vars, remove it
-head(dat2)
-#dcast also renamed the first collumn to "variable", which gets confusing later with melt,
-#so I changed the name of the first collumn back to "reps":
-colnames(dat2)[1] <- "reps"
-datm <- melt(dat2, id.vars="reps") #reps is now a column that functions as the vars
-head(datm)
-anova <- aov(value~variable, data=datm)
-summary(anova)
-tukey <- TukeyHSD(anova)
-result <- data.frame(tukey$variable)
-head(result)
-result["p.adj"]
-#something about printing only the p values changes the way the
-#p-values are formated, for example 0.0000146 --> 1.457372e-05 ...but not always...
-plot(TukeyHSD(anova, "variable")) #plots TukeyHSD p-values...
-
-###
-### ANOVAs on dataframe containing all of my raw luciferase data
-
-totlumdat <- read.table(file.choose(), header=TRUE)
-datcast <- dcast(melt(totlumdat[totlumdat$date=="12.Jan.15",]), variable~strain)
-dat2 <- datcast[-1,]
-colnames(dat2)[1] <- "reps"
-datm <- melt(dat2, id.vars="reps") #reps is now a column that functions as the vars
-datmo <- na.omit(datm) #remove any row that contains an NA
-anova <- aov(value~variable, data=datmo)
-summary(anova)
-tukey <- TukeyHSD(anova)
-result <- data.frame(tukey$variable)
-result["p.adj"]
-#
-datmoNoWT <- datmo[-c(71:80), ]
-datmoNoWT
-anova <- aov(value~variable, data=datmoNoWT)
-summary(anova)
-tukey <- TukeyHSD(anova)
-result <- data.frame(tukey$variable)
-result["p.adj"]
-#
-datmoWTonly <- datmo[-c(1:66), ]
-datmoWTonly
-t.test(value~variable, data=datmoWTonly)
 
 #### alex had to play with this -------
 alex.dat<-dat.dt
@@ -209,17 +311,53 @@ dat.raw[grep("</TABLE>", dat.raw)]
 normdat <- read.table(file.choose(), header=TRUE)
 head(normdat)
 normdat.dt <- data.table(normdat)
-setkey(normdat.dt, date)
-normdat.dt.noaug21 <- normdat.dt[!"21.Aug.14"]
-normdat.dt.noaug21may18 <- normdat.dt.noaug21[!"18.May.14"] 
+#setkey(normdat.dt, date)
+#normdat.dt.noaug21 <- normdat.dt[!"21.Aug.14"]
+#normdat.dt.noaug21may18 <- normdat.dt.noaug21[!"18.May.14"] 
 #remove all rows containing 21.Aug.14 and 18.May.14 because these experiments lacked mak2 as a control.
-#normdat.dt[ ,rep12:=NULL] #remove column 12 because it's all NA's ...removed in Excel prior to importing
-normdat.dt.noaug21may18[ ,group_f:=factor(group, levels=c('low', 'med', 'high'))]
+#For my Asilomar2015 poster I changed the group in Excel for strains that were tested 
+#on 21.Aug and 18.May so that it matched how these strains behaved in other experiments
+#However, not all strains tested on 21.Aug and 18.May occurr in other experiments, thus I decided
+#to include these two experiments in the plotted data.
+setkey(normdat.dt, gene)
+normdat.dt.final <- normdat.dt[!"doc12"] #remove doc1/2 for Asilomar2015 poster
+#normdat.dt.final[ ,rep12:=NULL] #remove column 12 because it's all NA's #column removed in Excel
+normdat.dt.final[ ,group_f:=factor(group, levels=c('low', 'med', 'high'))]
 #creates an ordered factor which will ultimately dictate the order inwhich the groups appear on a plot
+
+normdat.dt.final[ ,gene_f:=factor(gene, levels=c("mak2", "nrc1", "ham5", "bem1", "ras2", "prm1",
+                                           "pp1", "ada3", "adv1", "so", "mik1", "pp2A", "pkr1",
+                                           "ham10", "ham9", "ham8", "ham4", "ham7", "ham6", "nox1", 
+                                           "amph1", "ham11", "ham14", "mob3", "mik1", "ste20",
+                                           "vib1", "spr7", "ptp2", "ncu06362", "nik2", "cse1", "sec22",  
+                                           "arg15", "lao1", "ham12", "WT"))]
+
+normdat.dt.m <-melt(normdat.dt.final, 
+                    id.vars=c("date", "strain", "gene", "isolate", "group", "group_f", "gene_f"), 
+                    na.rm=TRUE) #data becomes a single collumn with "rep" as a collumn
+
+ggplot(normdat.dt.m)+
+  geom_point(aes(gene, value, color=group_f))+
+  scale_x_discrete(limits=normdat.dt.m[order(gene_f), unique(gene)])+
+  theme(axis.text.x = element_text(angle=90, color="black"))+
+  theme(legend.title=element_blank())+
+  theme(panel.background = element_rect(fill="white"))+
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_line(color="grey90"))+  #grey100 = white, grey0 = black
+  theme(axis.ticks = element_line(color="grey90"))+
+  theme(axis.text.y = element_text(color="black"))+
+  theme(legend.key = element_rect(fill = "white", color = "white"))+
+  theme(legend.background = element_rect(colour = "grey70",size=0.25))+
+  scale_color_manual(values = c("orange", "purple3", "green3"))+
+  ylab("Normalized Pprm-1::Luceriferase Output")+
+  xlab(expression("Gene"))
+
+########### playing with plotting ####
 
 #boxplot of normalized averages:
 plot(normavg~group_f, data=normdat.dt.noaug21may18, 
-     ylab="Normalized Average Luciferase Output", xlab="Group")
+     ylab="Normalized Average Luciferase Output", xlab="Group",
+     )
 
 #barplot of nomalized averages with sd:
 library(plyr)
@@ -241,6 +379,7 @@ normdat.dt.noaug21may18[ ,gene_f:=factor(gene, levels=c("mak2", "nrc1", "ham5", 
                                                         "so", "ham4", "ham8", "ham9", "ham7", "ham6", "nox1", 
                                                         "ham11", "ham14", "mob3", "spr7", "ptp2", "vib1", 
                                                         "nik2", "cse1", "lao1", "arg15", "ham12", "WT"))]
+
 #Discrete scatterplot of total normalized Luciferase data with aug21 and may18 experiments:
 normdat.dt.m <-melt(normdat.dt.noaug21may18, 
                     id.vars=c("date", "strain", "gene", "isolate", "group", "group_f", "gene_f"), 
@@ -262,15 +401,19 @@ ggplot(normdat.dt.m)+
   xlab(expression("Gene"))
 
 #Discrete scatterplot of total normalized data, without any experiments removed.
+normdat <- read.table(file.choose(), header=TRUE)
+normdat.dt <- data.table(normdat)
 normdat.dt[ ,group_f:=factor(group, levels=c('low', 'med', 'high'))]
-normdat.dt[ ,gene_f:=factor(gene, levels=c("mak2", "nrc1", "ham5", "bem1", "pp1", "ada3", "adv1", 
-                                           "so", "ham9", "ham8", "ham4", "ham7", "ham6", "nox1", 
-                                           "ham11", "ham14", "mob3", "ras2", "pp2A", "mik1", 
-                                           "amph1", "spr7", "ptp2", "vib1", "nik2", "cse1", 
-                                           "lao1", "arg15", "doc12", "ham12", "WT"))]
+normdat.dt[ ,gene_f:=factor(gene, levels=c("mak2", "nrc1", "ham5", "bem1", "ras2", "prm1",
+                                           "pp1", "ada3", "adv1", "so", "mik1", "pp2A",
+                                           "ham10", "ham9", "ham8", "ham4", "ham7", "ham6", "nox1", 
+                                           "ham11", "ham14", "mob3", "amph1", "ste20",
+                                           "ptp2", "spr7", "vib1", "nik2", "cse1", "Sec22", "NCU06362", 
+                                           "lao1", "arg15", "pkr1", "doc12", "ham12", "WT"))]
 normdat.dt.m <-melt(normdat.dt, 
                     id.vars=c("date", "strain", "gene", "isolate", "group", "group_f", "gene_f"), 
                     na.rm=TRUE)
+
 ggplot(normdat.dt.m)+
   geom_point(aes(gene, value, color=group_f))+
   scale_x_discrete(limits=normdat.dt.m[order(gene_f), unique(gene)])+
